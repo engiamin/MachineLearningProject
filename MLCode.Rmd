@@ -1,0 +1,150 @@
+---
+title: "Machine Learning Project"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+
+#Background
+
+Using devices such as Jawbone Up, Nike FuelBand, and Fitbit it is now possible to collect a large amount of data about personal activity relatively inexpensively. These type of devices are part of the quantified self movement – a group of enthusiasts who take measurements about themselves regularly to improve their health, to find patterns in their behavior, or because they are tech geeks. One thing that people regularly do is quantify how much of a particular activity they do, but they rarely quantify how well they do it. 
+
+The goal of this project is to predict the manner in which they did the exercise using two classifcation machine learning techniques and access the accuracy of the prediction of each of them.
+
+1. Decision Trees
+2. Random Forests
+
+#Data Reading and Cleaning
+
+The data for this project come from this source: http://web.archive.org/web/20161224072740/http:/groupware.les.inf.puc-rio.br/
+
+##Downloading and Reading the Data
+
+```{r, warning=FALSE,error=F, message=F}
+library(caret)
+library(ggplot2)
+library(rattle)
+```
+
+
+```{r, echo=T, warning=F, error=F}
+downloadTrain <- "https://d396qusza40orc.cloudfront.net/predmachlearn/pml-training.csv"
+downloadTest <- "https://d396qusza40orc.cloudfront.net/predmachlearn/pml-testing.csv"
+
+TrainFile <- "./Train_Data.csv"
+TestFile  <- "./Test_Data.csv"
+
+download.file(downloadTrain, TrainFile)
+download.file(downloadTest, TestFile)
+
+training <- read.csv("Train_Data.csv",na.strings = c("NA", "", "#DIV/0!"))
+testing <- read.csv("Test_Data.csv", na.strings = c("NA", "", "#DIV/0!") )
+```
+
+## Cleaning the Data
+
+In this step, we remove all variables that have values of NA so that the model can train correctly and not produce any errors.
+```{r}
+training <- training[colSums(is.na(training)) == 0]
+testing <- testing[colSums(is.na(testing)) == 0]
+```
+
+The first seven variables are also irrelevant to our analysis (X, user_name, raw_timestamp_part_1, raw_timestamp_part_2, cvtd_timestamp, new_window, num_window) and need to be removed.
+
+```{r}
+training <- training [, -c(1:7)]
+testing <- testing [, -c(1:7)]
+
+```
+
+##Exploring the Data
+
+Taking a quick look at our response variable "classe":
+
+```{r, fig.height=4.5, fig.width=4.5}
+ggplot(training, aes(x = classe)) +
+  geom_bar(aes(y = (..count..)/sum(..count..)), alpha=0.6, fill="blue", show.legend = F)+
+  scale_x_discrete(name="Classe")+
+  scale_y_continuous(name="Percentage", limits=c(0,0.5), labels = scales::percent)+
+  geom_text(aes(label = scales::percent((..count..)/sum(..count..)),
+                y= ((..count..)/sum(..count..))), stat="count",
+            vjust = -.25)+
+  theme_bw()
+```
+
+There are 5 categories of the variable classe. Category "A" is the most frequent while "D" is the least frequent.
+
+
+## Cross Validation
+
+To perform cross validation, we will use two methods:
+
+1. We will split the training data into a pure training dataset (75%) and *validation dataset* (25%). The validation set will be used to assess the accuracy of the prediction of the classifier and the out-of-sample error. 
+
+2. When training the model, we will use *k-fold cross-validation* where the training sample is randomly partitioned into k equal sized subsamples. Of the k subsamples, a single subsample is retained as the validation data for testing the model, and the remaining k − 1 subsamples are used as training data. The cross-validation process is then repeated k times, with each of the k subsamples used exactly once as the validation data. In this project, we use a 5-fold cross validation.
+
+```{r}
+set.seed(12345)
+
+trainingS <- createDataPartition(y=training$classe, p=0.75, list=FALSE)
+Training <- training[trainingS, ] 
+Validation <- training[-trainingS, ]
+```
+
+
+# Model 1: Decision Tree
+
+```{r}
+Mod1 <- train(classe ~ ., method="rpart", data=Training, trControl = trainControl(method = "cv", 5))
+
+fancyRpartPlot(Mod1$finalModel)
+```
+
+
+Now, assessing the accuracy of the decision tree using the validation dataset:
+
+```{r}
+pred1 <- predict(Mod1 ,newdata=Validation)
+
+confusionMatrix(pred1, Validation$classe)$table
+
+confusionMatrix(pred1, Validation$classe)$overall['Accuracy']
+```
+
+The out-of-sample accuracy of the decision tree model appears to be very low.
+
+# Model 2: Random Forest
+
+We try fitting a random forest to the training data and assess the accuracy of the model using the validation dataset.
+
+```{r}
+Mod2 <- train(classe ~ .,method="rf", data=Training,  trControl = trainControl(method = "cv", 5))
+
+
+pred2 <- predict(Mod2 ,newdata=Validation)
+
+confusionMatrix(pred2, Validation$classe)$table
+
+confusionMatrix(pred2, Validation$classe)$overall['Accuracy']
+
+```
+The out-of-sample accuracy of the random forest model appears to be high and suits the data well. 
+
+
+
+#Conclusion
+
+The random forest model (accuracy: 0.993) performed much better than decision trees (accuracy: 0.541). We will, therefore, use the random forest model for our future prediction. The expected out-of-sample error for the random forest is estimated at (1 - accuracy = 0.007 or 0.7%).
+
+#Prediction on Test Dataset
+
+Predicting the "classe" of each of the 20 observations of the test dataset:
+
+```{r}
+Predict_Test <- predict(Mod2, testing)
+data.frame(Observation=c(1:20),PredictedClasse=Predict_Test)
+```
+
